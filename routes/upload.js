@@ -8,7 +8,9 @@ const streamifier = require('streamifier');
 const router = express.Router();
 
 // Check if Cloudinary is configured
-const useCloudinary = process.env.CLOUDINARY_CLOUD_NAME && 
+// Temporarily disable Cloudinary if having signature issues - set DISABLE_CLOUDINARY=true
+const useCloudinary = !process.env.DISABLE_CLOUDINARY && 
+                      process.env.CLOUDINARY_CLOUD_NAME && 
                       process.env.CLOUDINARY_API_KEY && 
                       process.env.CLOUDINARY_API_SECRET;
 
