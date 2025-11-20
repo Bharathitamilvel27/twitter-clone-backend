@@ -8,20 +8,25 @@ const createTweet = async (req, res) => {
   try {
     const { content = '', image = null, video = null } = req.body;
 
-    if (!content || typeof content !== 'string' || content.trim().length === 0) {
-      return res.status(400).json({ message: 'Content is required' });
+    // Allow empty content only if there's an image or video
+    const hasMedia = image || video;
+    const contentTrimmed = content ? content.trim() : '';
+    
+    if (!hasMedia && (!content || typeof content !== 'string' || contentTrimmed.length === 0)) {
+      return res.status(400).json({ message: 'Content is required or upload an image/video' });
     }
-    const MAX_LEN = 280;
-    if (content.length > MAX_LEN) {
-      return res.status(400).json({ message: `Content exceeds ${MAX_LEN} characters` });
+    
+    // If content exists, validate length
+    if (contentTrimmed && contentTrimmed.length > 280) {
+      return res.status(400).json({ message: 'Content exceeds 280 characters' });
     }
 
     // extract hashtags like #tag
-    const hashtags = (content.match(/#([\p{L}\p{N}_]+)/gu) || []).map(h => h.slice(1).toLowerCase());
+    const hashtags = contentTrimmed ? (contentTrimmed.match(/#([\p{L}\p{N}_]+)/gu) || []).map(h => h.slice(1).toLowerCase()) : [];
 
     const tweet = new Tweet({
       user: req.user.id,
-      content,
+      content: contentTrimmed || '',
       image: image || null,
       video: video || null,
       hashtags,
