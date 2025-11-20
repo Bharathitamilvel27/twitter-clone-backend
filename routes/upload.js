@@ -3,6 +3,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const auth = require('../middleware/authMiddleware');
+const streamifier = require('streamifier');
 
 const router = express.Router();
 
@@ -14,9 +15,8 @@ const useCloudinary = process.env.CLOUDINARY_CLOUD_NAME &&
 let upload;
 
 if (useCloudinary) {
-  // Use Cloudinary for production
+  // Use Cloudinary for production - upload directly without multer-storage-cloudinary
   const cloudinary = require('cloudinary').v2;
-  const { CloudinaryStorage } = require('multer-storage-cloudinary');
 
   cloudinary.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -24,18 +24,8 @@ if (useCloudinary) {
     api_secret: process.env.CLOUDINARY_API_SECRET,
   });
 
-  const storage = new CloudinaryStorage({
-    cloudinary: cloudinary,
-    params: async (req, file) => {
-      const isVideo = /^video\//.test(file.mimetype);
-      return {
-        folder: isVideo ? 'twitter-clone/videos' : 'twitter-clone/tweets',
-        resource_type: isVideo ? 'video' : 'image',
-        // Cloudinary expects comma-separated string, not array
-        allowed_formats: isVideo ? 'mp4,webm,ogg,mov' : 'jpg,jpeg,png,gif,webp',
-      };
-    },
-  });
+  // Use memory storage for Cloudinary (stream directly to Cloudinary)
+  const storage = multer.memoryStorage();
 
   upload = multer({
     storage,
@@ -129,7 +119,7 @@ router.post(
       next();
     });
   },
-  (req, res) => {
+  async (req, res) => {
     // Final handler
     try {
       if (!req.file) {
@@ -138,23 +128,55 @@ router.post(
       
       const isVideo = /^video\//.test(req.file.mimetype);
       
-      // Cloudinary returns secure_url, local storage returns path
       let mediaUrl;
+      
       if (useCloudinary) {
-        mediaUrl = req.file.secure_url; // Full Cloudinary URL
-        console.log(`✅ Cloudinary upload: ${mediaUrl}`);
+        // Upload to Cloudinary directly using stream
+        const cloudinary = require('cloudinary').v2;
+        const uploadOptions = {
+          folder: isVideo ? 'twitter-clone/videos' : 'twitter-clone/tweets',
+          resource_type: isVideo ? 'video' : 'image',
+        };
+
+        // Return promise to handle async upload
+        return new Promise((resolve, reject) => {
+          const uploadStream = cloudinary.uploader.upload_stream(
+            uploadOptions,
+            (error, result) => {
+              if (error) {
+                console.error('Cloudinary upload error:', error);
+                res.status(500).json({ message: 'Cloudinary upload failed: ' + error.message });
+                return reject(error);
+              }
+              
+              const mediaUrl = result.secure_url;
+              console.log(`✅ Cloudinary upload: ${mediaUrl}`);
+              
+              res.json({ 
+                success: true, 
+                type: isVideo ? 'video' : 'image', 
+                [isVideo ? 'videoUrl' : 'imageUrl']: mediaUrl 
+              });
+              resolve();
+            }
+          );
+          
+          // Stream the buffer to Cloudinary
+          streamifier.createReadStream(req.file.buffer).pipe(uploadStream);
+        });
       } else {
+        // Local storage
         mediaUrl = isVideo 
           ? `/uploads/videos/${req.file.filename}` 
           : `/uploads/tweets/${req.file.filename}`;
         console.log(`✅ Local upload: ${mediaUrl}`);
+        
+        return res.json({ 
+          success: true, 
+          type: isVideo ? 'video' : 'image', 
+          [isVideo ? 'videoUrl' : 'imageUrl']: mediaUrl 
+        });
       }
-      
-      return res.json({ 
-        success: true, 
-        type: isVideo ? 'video' : 'image', 
-        [isVideo ? 'videoUrl' : 'imageUrl']: mediaUrl 
-      });
     } catch (e) {
       console.error('Upload handler error:', e);
       return res.status(500).json({ message: 'Upload processing failed' });
