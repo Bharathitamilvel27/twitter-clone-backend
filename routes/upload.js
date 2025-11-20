@@ -31,7 +31,8 @@ if (useCloudinary) {
       return {
         folder: isVideo ? 'twitter-clone/videos' : 'twitter-clone/tweets',
         resource_type: isVideo ? 'video' : 'image',
-        allowed_formats: isVideo ? ['mp4', 'webm', 'ogg', 'mov'] : ['jpg', 'jpeg', 'png', 'gif', 'webp'],
+        // Cloudinary expects comma-separated string, not array
+        allowed_formats: isVideo ? 'mp4,webm,ogg,mov' : 'jpg,jpeg,png,gif,webp',
       };
     },
   });
