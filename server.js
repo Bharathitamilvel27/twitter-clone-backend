@@ -19,7 +19,15 @@ app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:5173', 
   credentials: true 
 }));
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// Increase timeout for large file uploads (videos)
+app.use((req, res, next) => {
+  req.setTimeout(120000); // 2 minutes
+  res.setTimeout(120000);
+  next();
+});
 
 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
