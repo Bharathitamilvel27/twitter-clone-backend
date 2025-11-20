@@ -22,6 +22,14 @@ if (useCloudinary) {
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
     api_key: process.env.CLOUDINARY_API_KEY,
     api_secret: process.env.CLOUDINARY_API_SECRET,
+    secure: true, // Use HTTPS
+  });
+  
+  // Log config (without secret) for debugging
+  console.log('Cloudinary config:', {
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY ? '***' + process.env.CLOUDINARY_API_KEY.slice(-4) : 'missing',
+    has_secret: !!process.env.CLOUDINARY_API_SECRET
   });
 
   // Use memory storage for Cloudinary (stream directly to Cloudinary)
@@ -133,10 +141,21 @@ router.post(
       if (useCloudinary) {
         // Upload to Cloudinary directly using stream
         const cloudinary = require('cloudinary').v2;
+        
+        // Use unsigned upload or ensure signature is generated correctly
+        // Minimal options - let Cloudinary SDK handle signature
         const uploadOptions = {
           folder: isVideo ? 'twitter-clone/videos' : 'twitter-clone/tweets',
           resource_type: isVideo ? 'video' : 'image',
+          overwrite: false,
+          invalidate: true,
         };
+        
+        console.log('Uploading to Cloudinary with options:', { 
+          folder: uploadOptions.folder, 
+          resource_type: uploadOptions.resource_type,
+          file_size: req.file.size 
+        });
 
         // Return promise to handle async upload
         return new Promise((resolve, reject) => {
@@ -145,12 +164,22 @@ router.post(
             (error, result) => {
               if (error) {
                 console.error('Cloudinary upload error:', error);
-                res.status(500).json({ message: 'Cloudinary upload failed: ' + error.message });
+                console.error('Error details:', JSON.stringify(error, null, 2));
+                res.status(500).json({ 
+                  message: 'Cloudinary upload failed: ' + (error.message || 'Unknown error'),
+                  error: error.http_code || 'unknown'
+                });
                 return reject(error);
               }
               
+              if (!result || !result.secure_url) {
+                console.error('Cloudinary returned invalid result:', result);
+                res.status(500).json({ message: 'Cloudinary upload returned invalid response' });
+                return reject(new Error('Invalid Cloudinary response'));
+              }
+              
               const mediaUrl = result.secure_url;
-              console.log(`✅ Cloudinary upload: ${mediaUrl}`);
+              console.log(`✅ Cloudinary upload successful: ${mediaUrl}`);
               
               res.json({ 
                 success: true, 
