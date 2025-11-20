@@ -31,7 +31,18 @@ if (useCloudinary) {
   console.log('Cloudinary config:', {
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
     api_key: process.env.CLOUDINARY_API_KEY ? '***' + process.env.CLOUDINARY_API_KEY.slice(-4) : 'missing',
-    has_secret: !!process.env.CLOUDINARY_API_SECRET
+    has_secret: !!process.env.CLOUDINARY_API_SECRET,
+    api_key_length: process.env.CLOUDINARY_API_KEY?.length || 0,
+    secret_length: process.env.CLOUDINARY_API_SECRET?.length || 0
+  });
+  
+  // Test Cloudinary connection
+  cloudinary.api.ping((error, result) => {
+    if (error) {
+      console.error('❌ Cloudinary connection test failed:', error.message);
+    } else {
+      console.log('✅ Cloudinary connection test passed');
+    }
   });
 
   // Use memory storage for Cloudinary (stream directly to Cloudinary)
@@ -129,7 +140,7 @@ router.post(
       next();
     });
   },
-  async (req, res) => {
+  async (req, res, next) => {
     // Final handler
     try {
       if (!req.file) {
@@ -145,54 +156,58 @@ router.post(
         const cloudinary = require('cloudinary').v2;
         
         // Use unsigned upload or ensure signature is generated correctly
-        // Minimal options - let Cloudinary SDK handle signature
+        // Upload options - minimal to avoid signature issues
         const uploadOptions = {
           folder: isVideo ? 'twitter-clone/videos' : 'twitter-clone/tweets',
           resource_type: isVideo ? 'video' : 'image',
-          overwrite: false,
-          invalidate: true,
         };
         
-        console.log('Uploading to Cloudinary with options:', { 
+        console.log('Uploading to Cloudinary:', { 
           folder: uploadOptions.folder, 
           resource_type: uploadOptions.resource_type,
           file_size: req.file.size 
         });
 
-        // Return promise to handle async upload
+        // Try unsigned_upload_stream first to avoid signature issues
+        // If that fails, fall back to regular upload_stream
+        const useUnsigned = process.env.CLOUDINARY_UNSIGNED_UPLOAD === 'true';
+        const uploadMethod = useUnsigned ? 'unsigned_upload_stream' : 'upload_stream';
+        
+        console.log(`Using ${uploadMethod} for upload`);
+        
         return new Promise((resolve, reject) => {
-          const uploadStream = cloudinary.uploader.upload_stream(
+          const uploadStream = cloudinary.uploader[uploadMethod](
             uploadOptions,
             (error, result) => {
               if (error) {
-                console.error('Cloudinary upload error:', error);
-                console.error('Error details:', JSON.stringify(error, null, 2));
+                console.error('Cloudinary upload error:', error.message);
+                console.error('Error code:', error.http_code);
+                // If signature error, suggest checking credentials
+                if (error.message && error.message.includes('Invalid Signature')) {
+                  console.error('❌ Signature error - check CLOUDINARY_API_SECRET in Render env vars');
+                }
                 res.status(500).json({ 
-                  message: 'Cloudinary upload failed: ' + (error.message || 'Unknown error'),
-                  error: error.http_code || 'unknown'
+                  message: 'Cloudinary upload failed: ' + (error.message || 'Unknown error')
                 });
                 return reject(error);
               }
               
               if (!result || !result.secure_url) {
-                console.error('Cloudinary returned invalid result:', result);
-                res.status(500).json({ message: 'Cloudinary upload returned invalid response' });
-                return reject(new Error('Invalid Cloudinary response'));
+                console.error('Invalid Cloudinary result');
+                res.status(500).json({ message: 'Invalid Cloudinary response' });
+                return reject(new Error('Invalid response'));
               }
               
-              const mediaUrl = result.secure_url;
-              console.log(`✅ Cloudinary upload successful: ${mediaUrl}`);
-              
+              console.log(`✅ Cloudinary upload: ${result.secure_url}`);
               res.json({ 
                 success: true, 
                 type: isVideo ? 'video' : 'image', 
-                [isVideo ? 'videoUrl' : 'imageUrl']: mediaUrl 
+                [isVideo ? 'videoUrl' : 'imageUrl']: result.secure_url 
               });
               resolve();
             }
           );
           
-          // Stream the buffer to Cloudinary
           streamifier.createReadStream(req.file.buffer).pipe(uploadStream);
         });
       } else {
