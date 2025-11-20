@@ -84,36 +84,51 @@ if (useCloudinary) {
 }
 
 // Accept field 'media' (preferred) or legacy 'tweetImage'
+const uploadMiddleware = upload.single('media');
+
 router.post(
   '/tweet',
   auth,
   (req, res, next) => {
-    const handler = upload.single('media');
-    handler(req, res, function (err) {
+    uploadMiddleware(req, res, (err) => {
       if (err) {
-        // If field name mismatch, try legacy
-        const legacy = upload.single('tweetImage');
-        return legacy(req, res, function (err2) {
-          if (err2) return next(err2);
-          next();
+        console.error('Upload error:', err.message, err.code);
+        
+        // Handle specific multer errors
+        if (err.code === 'LIMIT_FILE_SIZE') {
+          return res.status(400).json({ 
+            message: `File too large. Max ${useCloudinary ? '100MB' : '50MB'}.` 
+          });
+        }
+        
+        if (err.message && err.message.includes('Unexpected end of form')) {
+          return res.status(400).json({ 
+            message: 'Upload was interrupted. Try a smaller file or check your connection.' 
+          });
+        }
+        
+        // Try legacy field name as fallback
+        if (err.message && err.message.includes('No such file')) {
+          const legacyHandler = upload.single('tweetImage');
+          return legacyHandler(req, res, (err2) => {
+            if (err2) {
+              console.error('Legacy upload also failed:', err2.message);
+              return res.status(400).json({ 
+                message: err2.message || 'Upload failed. Please try again.' 
+              });
+            }
+            next();
+          });
+        }
+        
+        return res.status(400).json({ 
+          message: err.message || 'Upload failed' 
         });
       }
       next();
     });
   },
-  (err, req, res, next) => {
-    // Multer error handler stage 1
-    if (err) {
-      console.warn('Upload error:', err.message);
-      const status = err.code === 'LIMIT_FILE_SIZE' ? 400 : 400;
-      const msg = err.code === 'LIMIT_FILE_SIZE' 
-        ? `File too large. Max ${useCloudinary ? '100MB' : '50MB'}.` 
-        : err.message || 'Upload failed';
-      return res.status(status).json({ message: msg });
-    }
-    next();
-  },
-  (req, res, next) => {
+  (req, res) => {
     // Final handler
     try {
       if (!req.file) {
@@ -126,13 +141,14 @@ router.post(
       let mediaUrl;
       if (useCloudinary) {
         mediaUrl = req.file.secure_url; // Full Cloudinary URL
+        console.log(`✅ Cloudinary upload: ${mediaUrl}`);
       } else {
         mediaUrl = isVideo 
           ? `/uploads/videos/${req.file.filename}` 
           : `/uploads/tweets/${req.file.filename}`;
+        console.log(`✅ Local upload: ${mediaUrl}`);
       }
       
-      console.log(`✅ Tweet media uploaded: ${mediaUrl}`);
       return res.json({ 
         success: true, 
         type: isVideo ? 'video' : 'image', 
@@ -140,7 +156,7 @@ router.post(
       });
     } catch (e) {
       console.error('Upload handler error:', e);
-      return res.status(500).json({ message: 'Upload failed' });
+      return res.status(500).json({ message: 'Upload processing failed' });
     }
   }
 );
