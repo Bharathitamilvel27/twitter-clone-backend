@@ -56,8 +56,8 @@ const getAllTweets = async (req, res) => {
       _id: tweet._id,
       // Hide original content/image if deleted; frontend will show reason
       content: tweet.isDeleted ? '' : tweet.content,
-      image: tweet.isDeleted ? null : (tweet.image || null),
-      video: tweet.isDeleted ? null : (tweet.video || null),
+      image: tweet.isDeleted ? null : (tweet.image && tweet.image.trim() ? tweet.image : null),
+      video: tweet.isDeleted ? null : (tweet.video && tweet.video.trim() ? tweet.video : null),
       createdAt: tweet.createdAt,
       user: tweet.user,
       likesCount: tweet.likes.length,
@@ -228,8 +228,8 @@ const getTweetsByUser = async (req, res) => {
     const formattedTweets = tweets.map(tweet => ({
       _id: tweet._id,
       content: tweet.isDeleted ? '' : tweet.content,
-      image: tweet.isDeleted ? null : (tweet.image || null),
-      video: tweet.isDeleted ? null : (tweet.video || null),
+      image: tweet.isDeleted ? null : (tweet.image && tweet.image.trim() ? tweet.image : null),
+      video: tweet.isDeleted ? null : (tweet.video && tweet.video.trim() ? tweet.video : null),
       createdAt: tweet.createdAt,
       user: tweet.user,
       likesCount: tweet.likes.length,
