@@ -34,9 +34,24 @@ const createTweet = async (req, res) => {
 
     const savedTweet = await tweet.save();
 
-    const populatedTweet = await Tweet.findById(savedTweet._id).populate('user', 'username');
+    const populatedTweet = await Tweet.findById(savedTweet._id).populate('user', 'username profilePicture');
 
-    res.status(201).json(populatedTweet);
+    // Ensure image/video are included in response
+    const response = {
+      ...populatedTweet.toObject(),
+      image: savedTweet.image || null,
+      video: savedTweet.video || null,
+    };
+
+    console.log('✅ Tweet created:', { 
+      id: response._id, 
+      hasImage: !!response.image, 
+      hasVideo: !!response.video,
+      image: response.image?.substring(0, 50),
+      video: response.video?.substring(0, 50)
+    });
+
+    res.status(201).json(response);
   } catch (error) {
     console.error("❌ Error in createTweet:", error.message);
     res.status(500).json({ message: 'Error creating tweet' });
@@ -52,14 +67,30 @@ const getAllTweets = async (req, res) => {
 
     const userId = req.user ? req.user.id : null;
 
-    const formattedTweets = tweets.map(tweet => ({
-      _id: tweet._id,
-      // Hide original content/image if deleted; frontend will show reason
-      content: tweet.isDeleted ? '' : tweet.content,
-      image: tweet.isDeleted ? null : (tweet.image && tweet.image.trim() ? tweet.image : null),
-      video: tweet.isDeleted ? null : (tweet.video && tweet.video.trim() ? tweet.video : null),
-      createdAt: tweet.createdAt,
-      user: tweet.user,
+    const formattedTweets = tweets.map(tweet => {
+      const imageUrl = tweet.isDeleted ? null : (tweet.image && tweet.image.trim() ? tweet.image : null);
+      const videoUrl = tweet.isDeleted ? null : (tweet.video && tweet.video.trim() ? tweet.video : null);
+      
+      // Debug logging for first few tweets
+      if (tweets.indexOf(tweet) < 3) {
+        console.log(`Tweet ${tweet._id}:`, {
+          hasImage: !!imageUrl,
+          hasVideo: !!videoUrl,
+          imagePreview: imageUrl?.substring(0, 60),
+          videoPreview: videoUrl?.substring(0, 60),
+          rawImage: tweet.image,
+          rawVideo: tweet.video
+        });
+      }
+      
+      return {
+        _id: tweet._id,
+        // Hide original content/image if deleted; frontend will show reason
+        content: tweet.isDeleted ? '' : tweet.content,
+        image: imageUrl,
+        video: videoUrl,
+        createdAt: tweet.createdAt,
+        user: tweet.user,
       likesCount: tweet.likes.length,
       retweetsCount: tweet.retweets.length,
       likes: tweet.likes,
